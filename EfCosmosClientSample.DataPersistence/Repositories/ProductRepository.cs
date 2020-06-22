@@ -68,6 +68,13 @@ namespace EfCosmosClientSample.DataPersistence.Repositories
               {
                 PartitionKey = new PartitionKey(nameof(ProductEntity)),
               });
+            var jsonSerializerOptions = new JsonSerializerOptions
+            {
+              Converters =
+                {
+                  new EntityJsonConverterFactory(context.Model),
+                },
+            };
 
             while (feedIterator.HasMoreResults)
             {
@@ -76,23 +83,19 @@ namespace EfCosmosClientSample.DataPersistence.Repositories
                            .Where(property => property.PropertyInfo != null)
                            .ToDictionary(property => property.GetPropertyName(),
                                          property => property);
-              var jsonSerializerOptions = new JsonSerializerOptions
-              {
-                Converters =
-                {
-                  new EntityJsonConverter<ProductEntity>(propertyDictionary),
-                },
-              };
 
               using (var responseMessage = await feedIterator.ReadNextAsync(cancellationToken))
               {
-                var productEntityBatch =
-                  await JsonSerializer.DeserializeAsync<CosmosResponse<ProductEntity>>(
-                    responseMessage.Content,
-                    jsonSerializerOptions,
-                    cancellationToken);
+                if (responseMessage.IsSuccessStatusCode)
+                {
+                  var productEntityBatch =
+                    await JsonSerializer.DeserializeAsync<CosmosResponse<ProductEntity>>(
+                      responseMessage.Content,
+                      jsonSerializerOptions,
+                      cancellationToken);
 
-                productEntities.AddRange(productEntityBatch.Documents);
+                  productEntities.AddRange(productEntityBatch.Documents);
+                }
               }
             }
           }

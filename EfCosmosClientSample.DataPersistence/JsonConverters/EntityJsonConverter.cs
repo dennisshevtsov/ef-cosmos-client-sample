@@ -6,18 +6,17 @@ namespace EfCosmosClientSample.DataPersistence.JsonConverters
 {
   using System;
   using System.Collections.Generic;
+  using System.Reflection;
   using System.Text.Json;
   using System.Text.Json.Serialization;
-
-  using Microsoft.EntityFrameworkCore.Metadata;
 
   internal sealed class EntityJsonConverter<TEntity>
     : JsonConverter<TEntity>
     where TEntity : class
   {
-    private readonly IDictionary<string, IProperty> _propertyDictionary;
+    private readonly IDictionary<string, PropertyInfo> _propertyDictionary;
 
-    public EntityJsonConverter(IDictionary<string, IProperty> propertyDictionary)
+    public EntityJsonConverter(IDictionary<string, PropertyInfo> propertyDictionary)
     {
       _propertyDictionary = propertyDictionary ?? throw new ArgumentNullException(nameof(propertyDictionary));
     }
@@ -43,43 +42,59 @@ namespace EfCosmosClientSample.DataPersistence.JsonConverters
 
             if (!string.IsNullOrWhiteSpace(propertyName))
             {
-              if (_propertyDictionary.TryGetValue(propertyName, out var property) &&
-                  reader.Read())
+              if (_propertyDictionary.TryGetValue(propertyName, out var property))
               {
                 object propertyValue = null;
 
-                if (property.ClrType == typeof(string))
+                Type propertyTypeToConvert;
+
+                if (property.PropertyType.IsGenericType &&
+                    property.PropertyType.GetGenericTypeDefinition() == typeof(IEnumerable<>))
                 {
-                  propertyValue = reader.GetString();
+                  propertyTypeToConvert = property.PropertyType.GetGenericArguments()[0];
                 }
-                else if ((property.ClrType == typeof(int) ||
-                          property.ClrType == typeof(int?)) &&
-                         reader.TryGetInt32(out var intPropertyValue))
+                else
                 {
-                  propertyValue = intPropertyValue;
+                  propertyTypeToConvert = property.PropertyType;
                 }
-                else if ((property.ClrType == typeof(float) ||
-                          property.ClrType == typeof(float?)) &&
-                         reader.TryGetSingle(out var floatPropertyValue))
+
+                var converter = options.GetConverter(propertyTypeToConvert);
+
+                if (converter != null)
                 {
-                  propertyValue = floatPropertyValue;
+                  propertyValue = JsonSerializer.Deserialize(ref reader, property.PropertyType, options);
                 }
-                else if ((property.ClrType == typeof(DateTime) ||
-                          property.ClrType == typeof(DateTime?)) &&
-                         reader.TryGetDateTime(out var dateTimePropertyValue))
+                else if (reader.Read())
                 {
-                  propertyValue = dateTimePropertyValue;
-                }
-                else if ((property.ClrType == typeof(Guid) ||
-                          property.ClrType == typeof(Guid?)) &&
-                         reader.TryGetGuid(out var guidPropertyValue))
-                {
-                  propertyValue = guidPropertyValue;
+                  if ((property.PropertyType == typeof(int) ||
+                       property.PropertyType == typeof(int?)) &&
+                      reader.TryGetInt32(out var intPropertyValue))
+                  {
+                    propertyValue = intPropertyValue;
+                  }
+                  else if ((property.PropertyType == typeof(float) ||
+                            property.PropertyType == typeof(float?)) &&
+                           reader.TryGetSingle(out var floatPropertyValue))
+                  {
+                    propertyValue = floatPropertyValue;
+                  }
+                  else if ((property.PropertyType == typeof(DateTime) ||
+                            property.PropertyType == typeof(DateTime?)) &&
+                           reader.TryGetDateTime(out var dateTimePropertyValue))
+                  {
+                    propertyValue = dateTimePropertyValue;
+                  }
+                  else if ((property.PropertyType == typeof(Guid) ||
+                            property.PropertyType == typeof(Guid?)) &&
+                           reader.TryGetGuid(out var guidPropertyValue))
+                  {
+                    propertyValue = guidPropertyValue;
+                  }
                 }
 
                 if (propertyValue != null)
                 {
-                  property.PropertyInfo.SetValue(entity, propertyValue);
+                  property.SetValue(entity, propertyValue);
                 }
               }
             }
